@@ -1,0 +1,1 @@
+# Waasabi PeerTube integration
