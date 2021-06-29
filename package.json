@@ -1,8 +1,9 @@
 {
   "name": "peertube-plugin-waasabi",
   "description": "Waasabi PeerTube integration",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "author": "Flaki <git@flaki.hu>",
+  "repository": "baytechc/peertube-plugin-waasabi",
   "bugs": "https://github.com/baytechc/peertube-plugin-waasabi/issues",
   "css": [],
   "clientScripts": [],

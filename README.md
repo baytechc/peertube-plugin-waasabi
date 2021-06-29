@@ -23,4 +23,4 @@ After installation, the plugin can be configured by clicking the *"Settings"* bu
 - **Waasabi webhook secret:**  
   The shared secret that is used to encode and validate the Webhook requests. This plugin generates HMAC-SHA-256 authentication codes for the message payload, that is checked on the receiving end by Waasabi to avoid tampering and forged requests.
 
-![Screenshot of the plugin settings page](./docs/plugin-config.png)
+![Screenshot of the plugin settings page](https://waasabi.org/code/peertube-plugin-waasabi/docs/plugin-config.png)
