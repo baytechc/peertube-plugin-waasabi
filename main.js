@@ -1,81 +1,105 @@
 const fetch = require('node-fetch');
+const { computeSignature } = require('./lib/hmac.js');
 
-let JWT;
+// TODO: how to get this from Peertube?
+const VideoState = {
+  PUBLISHED: 1,
+  TO_TRANSCODE: 2,
+  TO_IMPORT: 3,
+  WAITING_FOR_LIVE: 4,
+  LIVE_ENDED: 5
+};
+
+let WH_SECRET;
+let WH_ENDPOINT;
 
 async function register ({
   registerHook,
+  registerSetting,
+  settingsManager,
 }) {
-  try {
-    // TODO: how do we get the plugin config? (URL, password...)
-    const res = await fetch('https://waasabi.eu.ngrok.io/waasabi/auth/local', {
-      method: 'post',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        identifier: 'peertubebot',
-        password: 'testpassword',
-      })
-    });
-    JWT = await res.json().then(r => r.jwt);
+  registerSetting({
+    name: 'webhook-endpoint',
+    label: 'Waasabi webhook URL',
 
-    // TODO: use peertube logging facility?
-    console.log('[peertube-plugin-waasabi] Authenticated to Waasabi backend');
+    type: 'input',
 
-    registerHook({
-      target: 'action:api.live-video.statechange',
-      handler: hook,
-    });
-    //storageManager.storeData(fieldName + '-' + video.id, value)
-  }
-  catch(e) {
-    console.log('[peertube-plugin-waasabi] WARNING! Could not connect to Waasabi backend.');
-  }
+    // Optional
+    descriptionHTML: 'The URL of the Waasabi server webhook endpoint where the '
+                    +'plugin needs to report the state changes.',
+
+    default: 'https://',
+    private: true
+  });
+  
+  registerSetting({
+    name: 'webhook-secret',
+    label: 'Waasabi webhook secret',
+
+    type: 'input-password',
+
+    // Optional
+    descriptionHTML: 'This field stores the shared secret that is used to encode '
+                    +'and verify the webhook calls sent to the Waasabi instance',
+
+    default: '',
+    private: true
+  });
+  
+  // Need the shared webhook secret to initialize
+  const settings = await settingsManager.getSettings(['webhook-endpoint', 'webhook-secret']);
+  WH_ENDPOINT = settings['webhook-endpoint'];
+  WH_SECRET = settings['webhook-secret'];
+
+  // Listen to live video status changes
+  registerHook({
+    target: 'action:api.live-video.statechange',
+    handler: statechangeHandler,
+  });
 }
 
 async function unregister () {
 }
 
-function hook({ video }) {
-  streamStarted(video);
-}
-
-module.exports = {
-  register,
-  unregister
-}
-
-
-
-async function streamStarted(video) {
+async function statechangeHandler({ video }) {
   const { id, uuid, name, description, url, state } = video.dataValues;
 
   let event = '';
-  if (state == 4) {
+  if (state == VideoState.WAITING_FOR_LIVE) {
     event = 'live-now';
   }
-  if (state == 5) {
+  // TODO: permalives never switch to LIVE_ENDED
+  if (state == VideoState.LIVE_ENDED) {
     event = 'ended';
   }
 
   const data = {
     "type": "livestream",
     "event": event,
-    "message": `The session "${name}" is now live!`,
-    "session": {},
-    "livestream": {
-      "type": "peertube",
-    },
+    "sender": "peertube",
     video: {
       id, uuid, name, description, url, state,
     },
   };
 
-  const res = await fetch('https://waasabi.eu.ngrok.io/waasabi/event-manager/signals', {
+  const payload = JSON.stringify({ event: 'livestream.'+event, data });
+  const payloadHmac = computeSignature(payload, WH_SECRET);
+
+  const res = await fetch(WH_ENDPOINT, {
     method: 'post',
-    headers: { 'authorization': 'Bearer '+JWT, 'content-type': 'application/json' },
-    body: JSON.stringify({ event: 'livestream.'+event, data })
+    headers: {
+      'content-type': 'application/json',
+      'hmac': payloadHmac,
+    },
+    body: payload,
   });
 
   if (!res.ok) {
     return console.error('[peertube-plugin-waasabi] Request to backend for `streamStarted` failed: HTTP/'+res.status);
   }
+}
+
+module.exports = {
+  register,
+  unregister
 }
